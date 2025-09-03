@@ -14,6 +14,7 @@
   "type": "module",
   "dependencies": {
     "groq-sdk": "^0.30.0",
-    "whatwg-url": "^14.2.0"
+    "whatwg-url": "^14.2.0",
+    "zod": "^4.1.5"
   }
 }
