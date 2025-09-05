@@ -1,10 +1,16 @@
 import Groq from "groq-sdk";
 import { tavily } from "@tavily/core";
+import readline from "node:readline/promises";
 
 const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
 const groq = new Groq({ apiKey: process.env.GROQ_KEY });
 
 async function main() {
+  // creating an interface to take i/o and o/p from terminal
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
   const messages = [
     {
       role: "system",
@@ -13,80 +19,94 @@ async function main() {
                 1. webSearch({query}) // search the latest and realtime data on the internet
       `,
     },
-    {
-      role: "user",
-      content: "When was the verdict of India - Pakistan war in 2025 ? ",
-    },
+    // {
+    //   role: "user",
+    //   content: "When was the verdict of India - Pakistan war in 2025 ? ",
+    // },
   ];
 
   while (true) {
-    const completions = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0,
-      messages: messages,
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "webSearch",
-            description: "Search the latest and realtime data on the internet.",
-            parameters: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "The search query to perform search on.",
-                },
-              },
-              required: ["query"],
-            },
-          },
-        },
-      ],
-      tool_choice: "auto",
+    const question = await rl.question("You : ");
+
+    // we need to have a condition to break this loop, let's Say user when types Stop
+    if (question === "Stop") break;
+
+    // else push the query/question in messages
+    messages.push({
+      role: "user",
+      content: question,
     });
 
-    // console.log(completions.choices[0].message);
+    while (true) {
+      const completions = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        temperature: 0,
+        messages: messages,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "webSearch",
+              description:
+                "Search the latest and realtime data on the internet.",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "The search query to perform search on.",
+                  },
+                },
+                required: ["query"],
+              },
+            },
+          },
+        ],
+        tool_choice: "auto",
+      });
 
-    // Note : When a tool is called we do not get content in message, be get tool_calls. Meaning if tool_calls is not present , then we have final answer from the LLM.
+      // console.log(completions.choices[0].message);
 
-    // console.log(JSON.stringify(completions.choices[0].message, null, 2));
+      // Note : When a tool is called we do not get content in message, be get tool_calls. Meaning if tool_calls is not present , then we have final answer from the LLM.
 
-    //LLM does not excecutes, it returns us a message, telling which tool we have to excecute programitaclly. And then we send the output of that tool to LLm, then at last LLM sends us the final output.
+      // console.log(JSON.stringify(completions.choices[0].message, null, 2));
 
-    // we will push the message from assistant to maintain history
-    messages.push(completions.choices[0].message);
+      //LLM does not excecutes, it returns us a message, telling which tool we have to excecute programitaclly. And then we send the output of that tool to LLm, then at last LLM sends us the final output.
 
-    //we will check if any tool is called
+      // we will push the message from assistant to maintain history
+      messages.push(completions.choices[0].message);
 
-    const toolCalls = completions.choices[0].message.tool_calls;
-    if (!toolCalls) {
-      // this means we have our final answer from LLM
-      console.log(`Assitant : ${completions.choices[0].message.content}`);
+      //we will check if any tool is called
 
-      // as there will be no tool call, we can break from this while loop
-      // return;
-      break;
-    }
+      const toolCalls = completions.choices[0].message.tool_calls;
+      if (!toolCalls) {
+        // this means we have our final answer from LLM
+        console.log(`Assitant : ${completions.choices[0].message.content}`);
 
-    // if excecution comes here that means, any tool is been called. As tool_calls is an array, we have to loop over each, exceute the tool, and again send it's output to LLM as role = "tool".
+        // as there will be no tool call, we can break from this while loop
+        // return;
+        break;
+      }
 
-    for (const tool of toolCalls) {
-      // console.log(`tool : ${tool}`);
-      const functionName = tool.function.name;
-      const functionParams = tool.function.arguments;
+      // if excecution comes here that means, any tool is been called. As tool_calls is an array, we have to loop over each, exceute the tool, and again send it's output to LLM as role = "tool".
 
-      if (functionName == "webSearch") {
-        const toolResponse = await webSearch(JSON.parse(functionParams));
-        // console.log(`Tool Response : ${toolResponse}`);
+      for (const tool of toolCalls) {
+        // console.log(`tool : ${tool}`);
+        const functionName = tool.function.name;
+        const functionParams = tool.function.arguments;
 
-        // we will also pass the toolresponse to messages so LLM has complete context about the convo
-        messages.push({
-          tool_call_id: tool.id,
-          role: "tool",
-          name: functionName,
-          content: toolResponse,
-        });
+        if (functionName == "webSearch") {
+          const toolResponse = await webSearch(JSON.parse(functionParams));
+          // console.log(`Tool Response : ${toolResponse}`);
+
+          // we will also pass the toolresponse to messages so LLM has complete context about the convo
+          messages.push({
+            tool_call_id: tool.id,
+            role: "tool",
+            name: functionName,
+            content: toolResponse,
+          });
+        }
       }
     }
   }
@@ -118,6 +138,8 @@ async function main() {
   // });
 
   // console.log(JSON.stringify(completions2.choices[0].message, null, 2));
+
+  rl.close(); // this is done to close the terminal
 }
 
 async function webSearch({ query }) {
